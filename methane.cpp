@@ -210,18 +210,20 @@ class methane {                // class & its declarations
 int main()
 {
 
-    int Nrun = 500;
+    int Nrun = 50000;
     methane methr[N];
     initPositions();   
     initVelocities();
 
     for (int i = 0; i < N; i++)     // creates array of class methane objects
         methr[i];
-    std::ofstream file("test5.xyz");   
-    std::ofstream fileT("temp.txt");
+    std::ofstream file("methane_coords_50000_160209.xyz");   
+    std::ofstream fileT("methane_temperature_50000_160209.txt");
 
     for (int k = 0; k < Nrun; k++) {
-        std::cout << k << std::endl;
+        if (k % 100 == 0)
+            std::cout << k << std::endl;
+        
         fileT << instantTemp() << std::endl;
         file << 5*N << std::endl;
         file << "blah" << std::endl;
