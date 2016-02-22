@@ -13,86 +13,25 @@ const int N = 256 ;             // number of lattice points
 double rho = 0.456;             // density
 double T = 1.0;                 // system temperature
 double dt = 0.01;               // time step
-double **r;                     // lattice point
-double **v;                     // velocities
-double **a;                     // accelerations
+double ***r_lab;                     // lattice point
+double ***v;                     // velocities
+double ***a;                     // accelerations
+
 double d_CH = 2.*0.1087;        // distance from C to H (in pm)
 double angle_HCH = 109.5;       // angle between HCH in grad
 double hh = sqrt(2.*(d_CH*d_CH) * (1.-cos(angle_HCH)));	//length between two H atoms
 double mBox = hh/sqrt(2.);      // length of molecule cell
 double lBox = std::pow(N/rho, 1./3.);   // calculate box length
-double ang_v;
-double ang_L;
 double **q;                     //list of quaternion paramters q[0], q[1], q[2], q[3]
 double q_norm;                  // normalization factor of quaternion
-double **r_rot;
-double lj_CC_12 = 112190000;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
-double lj_HH_12 = 900030;
-double lj_CH_12 = 12554300;
+
+double ***r_body;
+double lj_CC_12 = 112190000.;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
+double lj_HH_12 = 900030.;
+double lj_CH_12 = 12554300.;
 double lj_CC_6 = 61030.4;      // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
 double lj_HH_6 = 3686.52;
 double lj_CH_6 = 14999.7;
-
-class methane {                // class & its declarations
-    public:  
-    double com[3];
-    double H1[3];
-    double H2[3];
-    double H3[3];
-    double H4[3];
-    double ** meth_coord;
-
-    double set_coord(double rx, double ry, double rz) {
-
-    meth_coord = new double* [5];
-    for (int i = 0; i < 5; i++)
-        meth_coord[i] = new double [3];
-
-    meth_coord[0][0] = rx ;       // update values for com
-    meth_coord[0][1] = ry ;
-    meth_coord[0][2] = rz ;
-
-    meth_coord[1][0] = rx - mBox/2.;       // update values for H1
-    meth_coord[1][1] = ry - mBox/2.;
-    meth_coord[1][2] = rz - mBox/2.;
-
-    meth_coord[2][0] = rx + mBox/2.;        // update values for H2
-    meth_coord[2][1] = ry - mBox/2.;
-    meth_coord[2][2] = rz + mBox/2.;
-
-    meth_coord[3][0] = rx - mBox/2.;         // update values for H3
-    meth_coord[3][1] = ry + mBox/2.;
-    meth_coord[3][2] = rz + mBox/2.;
-
-    meth_coord[4][0] = rx + mBox/2.;         // update values for H4
-    meth_coord[4][1] = ry + mBox/2.;
-    meth_coord[4][2] = rz - mBox/2.;
-
-    }
-};
-
-methane molecules[N];
-
-/*
-class rotation_q {
-    double matrix_A[3][3];
-
-    double set_q (double quat[4]) {    
-        matrix_A[0][0] = (quat[0]*quat[0] + quat[1]*quat[1] - quat[2]*quat[2] - quat[3]*quat[3]);
-        matrix_A[0][1] = 2*(quat[1]*quat[2] - quat[0]*quat[3]);
-        matrix_A[0][2] = 2*(quat[1]*quat[3] + quat[0]*quat[2]);
-
-        matrix_A[1][1] = 2*(quat[1]*quat[2] + quat[0]*quat[3]);
-        matrix_A[1][0] = (quat[0]*quat[0] - quat[1]*quat[1] + quat[2]*quat[2] - quat[3]*quat[3]);
-        matrix_A[1][2] = 2*(quat[2]*quat[3] - quat[0]*quat[1]);
-
-        matrix_A[2][1] = 2*(quat[1]*quat[3] - quat[0]*quat[2]);
-        matrix_A[2][2] = 2*(quat[2]*quat[3] + quat[0]*quat[1]);
-        matrix_A[2][0] = (quat[0]*quat[0] - quat[1]*quat[1] - quat[2]*quat[2] + quat[3]*quat[3]);
-    }
-
-};
-*/
 
 void initPositions() { //initialize FFC lattice
     int axisN = 1;
@@ -104,16 +43,23 @@ void initPositions() { //initialize FFC lattice
         double stepL = lBox/axisN;              // step length, length between lattice points
         double hstepL = stepL/2.;
 
-        r = new double *[N];    // create lattice points
-        r_rot = new double *[N]; // create rotation points
-        v = new double *[N];
-        a = new double *[N];
+        r_lab = new double **[N];    // create lattice points
+        r_body = new double **[N]; // create rotation points
+        v = new double **[N];
+        a = new double **[N];
 
         for (int i = 0; i < N; i++) { // create array for lattice points
-            r[i] = new double [3];
-            r_rot[i] = new double [15];  // 0-2 H1, 3-5 H2, 6-8 H3, 9-11 H4, 12 - 14 C, create array for rotated points
-            v[i] = new double [15];  // 0-2 H1, 3-5 H2, 6-8 H3, 9-11 H4, 12 - 14 C, create array for rotated points
-            a[i] = new double [15];  // 0-2 H1, 3-5 H2, 6-8 H3, 9-11 H4, 12 - 14 C, create array for rotated points
+            r_lab[i] = new double *[5];
+            r_body[i] = new double *[5]; 
+            v[i] = new double *[5];
+            a[i] = new double *[5];
+            for (int j = 0; j < 5; j++) {            
+                r_lab[i][j] = new double [3];
+                r_body[i][j] = new double [3]; 
+                v[i][j] = new double [3];
+                a[i][j] = new double [3];
+            }
+
         }
 
         int index = 0;
@@ -121,9 +67,26 @@ void initPositions() { //initialize FFC lattice
             for (int j = 0; j < 2*axisN; j++) 
                 for (int k = 0; k < 2*axisN; k++)
                     if ((i+j+k)%2 == 0) {
-                        r[index][0] = k*hstepL;
-                        r[index][1] = i*hstepL;
-                        r[index][2] = j*hstepL;
+                        r_lab[index][0][0] = k*hstepL;      // set C
+                        r_lab[index][0][1] = i*hstepL;
+                        r_lab[index][0][2] = j*hstepL;
+
+                        r_lab[index][1][0] = k*hstepL - mBox*0.5;      // set H1
+                        r_lab[index][1][1] = i*hstepL - mBox*0.5;
+                        r_lab[index][1][2] = j*hstepL - mBox*0.5;
+
+                        r_lab[index][2][0] = k*hstepL + mBox*0.5;      // set H2
+                        r_lab[index][2][1] = i*hstepL - mBox*0.5;
+                        r_lab[index][2][2] = j*hstepL + mBox*0.5;
+
+                        r_lab[index][3][0] = k*hstepL - mBox*0.5;      // set H3
+                        r_lab[index][3][1] = i*hstepL + mBox*0.5;
+                        r_lab[index][3][2] = j*hstepL + mBox*0.5;
+
+                        r_lab[index][4][0] = k*hstepL + mBox*0.5;      // set H4
+                        r_lab[index][4][1] = i*hstepL + mBox*0.5;
+                        r_lab[index][4][2] = j*hstepL - mBox*0.5;
+
                         index++;
                     }    
     }
@@ -183,137 +146,96 @@ void initRotations() {  //initialize molecule rotation
             matrix_A_list[k][7] = matrix_A[2][1];
             matrix_A_list[k][8] = matrix_A[2][2];
     }
-        for (int k = 0; k < N; k++) {
-// rotate H1
-            r_rot[k][0] = matrix_A_list[k][0]*(molecules[k].meth_coord[1][0] - r[k][0]) 
-                        + matrix_A_list[k][1]*(molecules[k].meth_coord[1][1] - r[k][1])  
-                        + matrix_A_list[k][2]*(molecules[k].meth_coord[1][2] - r[k][2]);            
-            r_rot[k][1] = matrix_A_list[k][3]*(molecules[k].meth_coord[1][0] - r[k][0]) 
-                        + matrix_A_list[k][4]*(molecules[k].meth_coord[1][1] - r[k][1]) 
-                        + matrix_A_list[k][5]*(molecules[k].meth_coord[1][2] - r[k][2]);
-            r_rot[k][2] = matrix_A_list[k][6]*(molecules[k].meth_coord[1][0] - r[k][0]) 
-                        + matrix_A_list[k][7]*(molecules[k].meth_coord[1][1] - r[k][1]) 
-                        + matrix_A_list[k][8]*(molecules[k].meth_coord[1][2] - r[k][2]);
-// rotate H2
-            r_rot[k][3] = matrix_A_list[k][0]*(molecules[k].meth_coord[2][0] - r[k][0]) 
-                        + matrix_A_list[k][1]*(molecules[k].meth_coord[2][1] - r[k][1]) 
-                        + matrix_A_list[k][2]*(molecules[k].meth_coord[2][2] - r[k][2]);            
-            r_rot[k][4] = matrix_A_list[k][3]*(molecules[k].meth_coord[2][0] - r[k][0]) 
-                        + matrix_A_list[k][4]*(molecules[k].meth_coord[2][1] - r[k][1]) 
-                        + matrix_A_list[k][5]*(molecules[k].meth_coord[2][2] - r[k][2]);
-            r_rot[k][5] = matrix_A_list[k][6]*(molecules[k].meth_coord[2][0] - r[k][0]) 
-                        + matrix_A_list[k][7]*(molecules[k].meth_coord[2][1] - r[k][1]) 
-                        + matrix_A_list[k][8]*(molecules[k].meth_coord[2][2] - r[k][2]);
-// rotate H3
-            r_rot[k][6] = matrix_A_list[k][0]*(molecules[k].meth_coord[3][0] - r[k][0]) 
-                        + matrix_A_list[k][1]*(molecules[k].meth_coord[3][1] - r[k][1]) 
-                        + matrix_A_list[k][2]*(molecules[k].meth_coord[3][2] - r[k][2]);
-            r_rot[k][7] = matrix_A_list[k][3]*(molecules[k].meth_coord[3][0] - r[k][0]) 
-                        + matrix_A_list[k][4]*(molecules[k].meth_coord[3][1] - r[k][1]) 
-                        + matrix_A_list[k][5]*(molecules[k].meth_coord[3][2] - r[k][2]);
-            r_rot[k][8] = matrix_A_list[k][6]*(molecules[k].meth_coord[3][0] - r[k][0]) 
-                        + matrix_A_list[k][7]*(molecules[k].meth_coord[3][1] - r[k][1])  
-                        + matrix_A_list[k][8]*(molecules[k].meth_coord[3][2] - r[k][2]);
-// rotate H4
-            r_rot[k][9] = matrix_A_list[k][0]*(molecules[k].meth_coord[4][0] - r[k][0]) 
-                        + matrix_A_list[k][1]*(molecules[k].meth_coord[4][1] - r[k][1]) 
-                        + matrix_A_list[k][2]*(molecules[k].meth_coord[4][2] - r[k][2]);            
-            r_rot[k][10] = matrix_A_list[k][3]*(molecules[k].meth_coord[4][0] - r[k][0]) 
-                        + matrix_A_list[k][4]*(molecules[k].meth_coord[4][1] - r[k][1]) 
-                        + matrix_A_list[k][5]*(molecules[k].meth_coord[4][2] - r[k][2]);
-            r_rot[k][11] = matrix_A_list[k][6]*(molecules[k].meth_coord[4][0] - r[k][0]) 
-                        + matrix_A_list[k][7]*(molecules[k].meth_coord[4][1] - r[k][1]) 
-                        + matrix_A_list[k][8]*(molecules[k].meth_coord[4][2] - r[k][2]);
-// coords of COM, C
-            r_rot[k][12] = molecules[k].meth_coord[0][0];
-            r_rot[k][13] = molecules[k].meth_coord[0][1];
-            r_rot[k][14] = molecules[k].meth_coord[0][1];
+        for (int k = 0; k < N; k++) 
+            for (int j = 0; j < 5; j++) {
+// rotate C,H1,H2,H3,H4        r_body[molecule][site][coord]    r_lab[molecule][com][coord]
+                r_body[k][j][0] = matrix_A_list[k][0]*(r_lab[k][j][0] - r_lab[k][0][0]) + 
+                                  matrix_A_list[k][1]*(r_lab[k][j][1] - r_lab[k][0][1]) + 
+                                  matrix_A_list[k][2]*(r_lab[k][j][2] - r_lab[k][0][2]); 
+
+                r_body[k][j][1] = matrix_A_list[k][3]*(r_lab[k][j][0] - r_lab[k][0][0]) + 
+                                  matrix_A_list[k][4]*(r_lab[k][j][1] - r_lab[k][0][1]) + 
+                                  matrix_A_list[k][5]*(r_lab[k][j][2] - r_lab[k][0][2]); 
+
+                r_body[k][j][2] = matrix_A_list[k][6]*(r_lab[k][j][0] - r_lab[k][0][0]) + 
+                                  matrix_A_list[k][7]*(r_lab[k][j][1] - r_lab[k][0][1]) + 
+                                  matrix_A_list[k][8]*(r_lab[k][j][2] - r_lab[k][0][2]); 
         }
 
-
+// rotate back to lab system
         for (int k = 0; k < N; k++)
-            for (int j = 0; j < 12; j=j+3) {
-                r_rot[k][j] += r[k][0] ;
-                r_rot[k][j+1] += r[k][1] ;
-                r_rot[k][j+2] += r[k][2] ;
-            }
+            for (int j = 0; j < 5; j++) 
+                for (int l = 0; l < 3; l++)
+                    r_lab[k][j][l] = r_body[k][j][l] + r_lab[k][0][l] ;
 }
 
 void calculateForces() {
-    for (int i = 0; i < N-1; i++)
-        for (int j = i+1; j < N; j++) {
-            double rij[15] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-            double rSqd = 0;
-            for (int k = 0; k < 15; k = k+3) 
-                for (int l = 0; l < 15; l = l+3) {
-                rij[k] = r_rot[i][k] - r_rot[j][l];
-                rij[k+1] = r_rot[i][k+1] - r_rot[j][l+1];
-                rij[k+2] = r_rot[i][k+2] - r_rot[j][l+2];
-                rSqd += rij[k] * rij[k] + rij[k+1] * rij[k+1] + rij[k+2] * rij[k+2] ;
+    for (int i = 0; i < N-1; i++)                   // molecule i
+        for (int j = i+1; j < N; j++) {             // molecule j
+            double rij[5][3];
+            double rSqd = 0.;
+            for (int k = 0; k < 5; k++)             // sites of i 
+                for (int l = 0; l < 5; l++)         // sites of j
+                    for (int m = 0; m < 3; m++) {   // coords
+                        std::cout << r_lab[i][k][m] << " r_lab_i" << std::endl;
+                        std::cout << r_lab[j][k][m] << " r_lab_j" << std::endl;
+                        std::cout << rij[k][m] << " rij" << std::endl;
+
+                        rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];   //distance between sites
+                        rSqd += rij[k][m] * rij[k][m];
                 
-                    if ( l < 12 && k < 12) {        // HH
-                        double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -8)) -(lj_HH_6 * std::pow(rSqd, -4)));
-                        a[i][k]  += rij[k] * f_HH;
-                        a[i][k+1]  += rij[k] * f_HH;
-                        a[i][k+2]  += rij[k] * f_HH;
-                        a[j][k]  -= rij[k] * f_HH;
-                        a[j][k+1]  -= rij[k] * f_HH;
-                        a[j][k+2]  -= rij[k] * f_HH;
+                        if ( k == 0 && l == 0) {                    // CC
+                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
+                            a[i][k][m]  += rij[k][m] * f_CC;
+                            a[j][k][m]  -= rij[k][m] * f_CC;
+                        }
+                            else if ( k != 0 && l != 0 ) {          // HH
+                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -8)) - (lj_HH_6 * std::pow(rSqd, -4)));
+                                a[i][k][m]  += rij[k][m] * f_HH;
+                                a[j][k][m]  -= rij[k][m] * f_HH;
+                            }
+                            else {                                  // CH
+                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -8)) - (lj_CH_6 * std::pow(rSqd, -4)));
+                                a[i][k][m]  += rij[k][m] * f_CH;
+                                a[j][k][m]  -= rij[k][m] * f_CH;
+                        }
+//                            std::cout << a[i][k][m] << " ai" << std::endl;
+//                            std::cout << a[j][k][m] << " aj" << std::endl;
                     }
-                    else if ( l > 12 && k > 12) {   // CC
-                        double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) -(lj_CC_6 * std::pow(rSqd, -4))); 
-                        a[i][k]  += rij[k] * f_CC;
-                        a[i][k+1]  += rij[k] * f_CC;
-                        a[i][k+2]  += rij[k] * f_CC;
-                        a[j][k]  -= rij[k] * f_CC;
-                        a[j][k+1]  -= rij[k] * f_CC;
-                        a[j][k+2]  -= rij[k] * f_CC;
-                    }
-                    else {                       // CH
-                        double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -8)) -(lj_CH_6 * std::pow(rSqd, -4)));
-                        a[i][k]  += rij[k] * f_CH;
-                        a[i][k+1]  += rij[k] * f_CH;
-                        a[i][k+2]  += rij[k] * f_CH;
-                        a[j][k]  -= rij[k] * f_CH;
-                        a[j][k+1]  -= rij[k] * f_CH;
-                        a[j][k+2]  -= rij[k] * f_CH;
-                    }
-                }
         }   
 }
+
 
 void velocityVerlet() {
     calculateForces();
     for (int i = 0; i < N; i ++) 
-        for (int j = 0; j < 15; j++){
+        for (int j = 0; j < 5; j++)
+            for (int k = 0; k < 3; k++) {
 //            std::cout << a[i][j] << std::endl;
-            r_rot[i][j] += v[i][j] * dt + a[i][j] * dt * dt * 0.5;
-            v[i][j] += 0.5 * a[i][j] * dt;
-        }
+                std::cout << a[i][j][k] << " a" << std::endl;
+                r_lab[i][j][k] += v[i][j][k] * dt + a[i][j][k] * dt * dt * 0.5;
+                v[i][j][k] += 0.5 * a[i][j][k] * dt;
+
+            }
     calculateForces();
     for (int i = 0; i < N; i ++) 
-        for (int j = 0; j < 15; j++){
-            v[i][j] += 0.5 * a[i][j] * dt;
-        }
+        for (int j = 0; j < 5; j++)
+            for (int k = 0; k < 3; k++) {
+                v[i][j][k] += 0.5 * a[i][j][k] * dt;
+            }
 }
-
 
 
 int main() {
     initPositions();
 
-    for (int k = 0; k < N; k++)
-        molecules[k].set_coord(r[k][0], r[k][1], r[k][2]);
-
     initRotations();
     
-    std::ofstream file("methane_20160222_100_256.xyz");
+    std::ofstream file("methane_20160222_50_256.xyz");
     
-    int n_step = 100;
+    int n_step = 50;
     for (int step_number = 0; step_number < n_step; step_number++) {
         std::cout << step_number << std::endl;
-
-
         
 /*
         for  (int k = 0; k < N; k++){ 
@@ -330,16 +252,17 @@ int main() {
         file << "methane" << std::endl;    
 
         for (int k = 0; k < N; k++) {
-
-            file << "C " << r_rot[k][12] << " " << r_rot[k][13] << " " << r_rot[k][14]; 
-            for (int j = 1; j < 12; j+=3) {
-                    file << std::endl;
+            for (int i = 0; i < 5; i++){
+                if (i == 0)
+                    file << "C ";
+                else
                     file << "H ";
-                    file << r_rot[k][j] << " " << r_rot[k][j+1] << " " << r_rot[k][j+2];
+                for (int j = 0; j < 3; j++)
+                    file << r_lab[k][i][j] << " ";       
+                file << std::endl;
             }
-            file << std::endl;
         }
-        velocityVerlet();   
+        velocityVerlet();
     }
     file.close();
 //    std::cout << "test " << 0%3 << std::endl;
