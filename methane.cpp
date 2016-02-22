@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <string>
 
-int N = 256 ;           // number of lattice points
+const int N = 256 ;           // number of lattice points
 double rho = 0.456;        // density
 double T = 1.0;         // system temperature
 double dt = 0.01;
@@ -19,11 +19,54 @@ double mbox = hh/sqrt(2.);  // length of molecule cell
 double boxL = std::pow(N/rho, 1./3.);   // calculate box length
 
 void initialize();
+void computeAccelerations();
 void initPositions();
 void initVelocities();
 void rescaleVelocities();
 double gasdev();
 
+class methane {                // class & its declarations
+    public:  
+    double com[3];
+    double H1[3];
+    double H2[3];
+    double H3[3];
+    double H4[3];
+    double ** meth_coord;
+    double set_coord(double rx, double ry, double rz) {
+
+    meth_coord = new double* [5];
+    for (int i = 0; i < 5; i++)
+        meth_coord[i] = new double [3];
+
+    meth_coord[0][0] = rx ;       // update values for com
+    meth_coord[0][1] = ry ;
+    meth_coord[0][2] = rz ;
+
+    meth_coord[1][0] = rx - mbox/2.;       // update values for H1
+    meth_coord[1][1] = ry - mbox/2.;
+    meth_coord[1][2] = rz - mbox/2.;
+
+    meth_coord[2][0] = rx + mbox/2.;        // update values for H2
+    meth_coord[2][1] = ry - mbox/2.;
+    meth_coord[2][2] = rz + mbox/2.;
+
+    meth_coord[3][0] = rx - mbox/2.;         // update values for H3
+    meth_coord[3][1] = ry + mbox/2.;
+    meth_coord[3][2] = rz + mbox/2.;
+
+    meth_coord[4][0] = rx + mbox/2.;         // update values for H4
+    meth_coord[4][1] = ry + mbox/2.;
+    meth_coord[4][2] = rz - mbox/2.;
+
+    }
+
+    methane() // constructor! gnarhrhrharhrhraharharhrahararh 
+    {
+    }
+};
+
+methane methr[N];
 
 void initPositions() { //initialize FFC lattice
     int sideN = 1;
@@ -59,7 +102,7 @@ void initPositions() { //initialize FFC lattice
         std::cout << "oida, keine magic number" << std::endl;
 }
 
-double gasdev () {
+double gasdev () {                  // gas approx. for starting velocities
     static bool available = false;
     static double gset;
     double fac, rsq, v1, v2;
@@ -116,6 +159,39 @@ void initVelocities() {
 }
 
 
+void computeAccelerations(methane* methr) {           // compute force between a single site and all others
+    for (int i = 0; i < N; i++)         // set all accelerations to zero
+        for (int k = 0; k < 3; k++)
+            a[i][k] = 0;
+ 
+    for (int i = 0; i < N-1; i++)               // sum over all molecules 
+        for (int m = 0; m < 5; m++) {           // sum over all sites of molecule i
+            for (int j = i+1; j < N; j++) {     // sum over all other molecules
+                    double rijk[3];
+                    double rSqd = 0;
+                        for (int k = 0; k < 5;k++) {         // sum over all sites of other molecules
+                            for (int l = 0; l <3; l++) {      // sum over all axes
+                                rijk[l] = methr[i].meth_coord[k][l] - methr[j].meth_coord[m][l];
+                                                    // closest image convention
+/*                    if (std::abs(rijk[l]) > 0.5 * boxL) {
+                        if (rijk[l] > 0)
+                            rijk[l] -= boxL;
+                        else
+                            rijk[l] += boxL;
+                    }
+*/                      rSqd += rijk[l] * rijk[l];
+            }
+                double f = 24 * (2 * std::pow(rSqd, -7) - std::pow(rSqd, -4));        // LJ
+                for (int k = 0; k < 3; k++) {
+                    a[i][k] += rijk[k] * f;
+                    a[j][k] -= rijk[k] * f;
+                }
+                }
+                }
+            }
+}
+
+/*
 void computeAccelerations() {           // compute starting velocities
     for (int i = 0; i < N; i++)         // set all accelerations to zero
         for (int k = 0; k < 3; k++)
@@ -136,16 +212,17 @@ void computeAccelerations() {           // compute starting velocities
                 }
                 rSqd += rij[k] * rij[k];
              }
-            double f = 24 * (2 * std::pow(rSqd, -7) - std::pow(rSqd, -4));
+            double f = 24 * (2 * std::pow(rSqd, -7) - std::pow(rSqd, -4));      // LJ calculation!
             for (int k = 0; k < 3; k++) {
                 a[i][k] += rij[k] * f;
                 a[j][k] -= rij[k] * f;
             }
         }
 }
+*/
 
 void velocityVerlet(double dt) {
-    computeAccelerations();
+    computeAccelerations(methr);
     for (int i = 0; i < N; i++)
         for (int k = 0; k < 3; k++) {
             r[i][k] += v[i][k] * dt + 0.5 *a[i][k] * dt * dt;
@@ -156,7 +233,7 @@ void velocityVerlet(double dt) {
                 r[i][k] -= boxL;
             v[i][k] += 0.5 * a[i][k] * dt;
         }
-    computeAccelerations();
+    computeAccelerations(methr);
     for (int i = 0; i < N; i++)
         for (int k = 0; k < 3; k++)
             v[i][k] += 0.5 * a[i][k] * dt;
@@ -170,55 +247,18 @@ double instantTemp() {
     return sum / (3 * (N - 1));
 }
 
-class methane {                // class & its declarations
-    public:  
-    double com[3];
-    double H1[3];
-    double H2[3];
-    double H3[3];
-    double H4[3];
-    double set_coord(double rx, double ry, double rz) {
-       
-        com[0] = rx ;       // update values for com
-        com[1] = ry ;
-        com[2] = rz ;
-
-        H1[0] = rx - mbox/2.;       // update values for H1
-        H1[1] = ry - mbox/2.;
-        H1[2] = rz - mbox/2.;
-
-        H2[0] = rx + mbox/2.;        // update values for H2
-        H2[1] = ry - mbox/2.;
-        H2[2] = rz + mbox/2.;
-
-        H3[0] = rx - mbox/2.;         // update values for H3
-        H3[1] = ry + mbox/2.;
-        H3[2] = rz + mbox/2.;
-
-        H4[0] = rx + mbox/2.;         // update values for H4
-        H4[1] = ry + mbox/2.;
-        H4[2] = rz - mbox/2.;
-
-    }
-
-    methane() // constructor! gnarhrhrharhrhraharharhrahararh 
-    {
-    }
-};
-
 
 int main()
 {
 
-    int Nrun = 50000;
-    methane methr[N];
+    int Nrun = 500;
     initPositions();   
     initVelocities();
 
     for (int i = 0; i < N; i++)     // creates array of class methane objects
         methr[i];
-    std::ofstream file("methane_coords_50000_160209.xyz");   
-    std::ofstream fileT("methane_temperature_50000_160209.txt");
+    std::ofstream file("methane_coords_500_160211.xyz");   
+    std::ofstream fileT("methane_temperature_500_160211.txt");
 
     for (int k = 0; k < Nrun; k++) {
         if (k % 100 == 0)
@@ -234,14 +274,20 @@ int main()
         for (int j = 0; j < N; j++)     // set methane on lattice point
             methr[j].set_coord(r[j][0], r[j][1], r[j][2]);
                                         //        methane meth;
-        for (int j = 0; j < N; j++) {
-            file << "C " << methr[j].com[0] << " " << methr[j].com[1] << " " << methr[j].com[2] << std::endl;
-            file << "H1 " << methr[j].H1[0] << " " << methr[j].H1[1] << " " << methr[j].H1[2] << std::endl;
-            file << "H2 " << methr[j].H2[0] << " " << methr[j].H2[1] << " " << methr[j].H2[2] << std::endl;
-            file << "H3 " << methr[j].H3[0] << " " << methr[j].H3[1] << " " << methr[j].H3[2] << std::endl;
-            file << "H4 " << methr[j].H4[0] << " " << methr[j].H4[1] << " " << methr[j].H4[2] << std::endl;
-        }
-        
+        for (int j = 0; j < N; j++) {       
+            for (int k = 0; k < 5; k++){
+                if (k == 0){
+                    file << "C ";
+                    for (int l = 0; l < 3; l++)
+                        file << " " << methr[j].meth_coord[k][l];
+                }
+                else
+                    file << "H ";
+                    for (int l = 0; l < 3; l++)
+                        file << " " << methr[j].meth_coord[k][l];       
+                file << std::endl;
+            }
+        }        
         velocityVerlet(dt);
     }
     file.close();

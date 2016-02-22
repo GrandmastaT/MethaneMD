@@ -1,0 +1,3 @@
+-lgsl -lgslcblas
+
+necessary to compile gsl library
