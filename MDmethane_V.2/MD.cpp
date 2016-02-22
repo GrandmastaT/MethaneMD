@@ -26,12 +26,12 @@ double **q;                     //list of quaternion paramters q[0], q[1], q[2],
 double q_norm;                  // normalization factor of quaternion
 
 double ***r_body;
-double lj_CC_12 = 112190000.;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
-double lj_HH_12 = 900030.;
-double lj_CH_12 = 12554300.;
-double lj_CC_6 = 61030.4;      // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
-double lj_HH_6 = 3686.52;
-double lj_CH_6 = 14999.7;
+double lj_CC_12 = 1.12190000;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
+double lj_HH_12 = 9.00030;
+double lj_CH_12 = 1.2554300;
+double lj_CC_6 = 6.10304;      // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
+double lj_HH_6 = 3.68652;
+double lj_CH_6 = 1.49997;
 
 void initPositions() { //initialize FFC lattice
     int axisN = 1;
@@ -174,16 +174,18 @@ void calculateForces() {
         for (int j = i+1; j < N; j++) {             // molecule j
             double rij[5][3];
             double rSqd = 0.;
-            for (int k = 0; k < 5; k++)             // sites of i 
+            for (int k = 0; k < 5; k++) {             // sites of i 
                 for (int l = 0; l < 5; l++)         // sites of j
                     for (int m = 0; m < 3; m++) {   // coords
-                        std::cout << r_lab[i][k][m] << " r_lab_i" << std::endl;
-                        std::cout << r_lab[j][k][m] << " r_lab_j" << std::endl;
-                        std::cout << rij[k][m] << " rij" << std::endl;
+//                        std::cout << r_lab[i][k][m] << " r_lab_i" << std::endl;
+//                        std::cout << r_lab[j][k][m] << " r_lab_j" << std::endl;
+//                        std::cout << rij[k][m] << " rij" << std::endl;
 
                         rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];   //distance between sites
                         rSqd += rij[k][m] * rij[k][m];
-                
+                    }
+                for (int l = 0; l < 5; l++)         // sites of j
+                    for (int m = 0; m < 3; m++) {   // coords
                         if ( k == 0 && l == 0) {                    // CC
                             double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
                             a[i][k][m]  += rij[k][m] * f_CC;
@@ -202,6 +204,7 @@ void calculateForces() {
 //                            std::cout << a[i][k][m] << " ai" << std::endl;
 //                            std::cout << a[j][k][m] << " aj" << std::endl;
                     }
+            }
         }   
 }
 
@@ -212,16 +215,16 @@ void velocityVerlet() {
         for (int j = 0; j < 5; j++)
             for (int k = 0; k < 3; k++) {
 //            std::cout << a[i][j] << std::endl;
-                std::cout << a[i][j][k] << " a" << std::endl;
-                r_lab[i][j][k] += v[i][j][k] * dt + a[i][j][k] * dt * dt * 0.5;
-                v[i][j][k] += 0.5 * a[i][j][k] * dt;
+//                std::cout << a[i][j][k] << " a" << std::endl;
+                r_lab[i][j][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5;
+                v[i][j][k] += 0.5 * a[i][0][k] * dt;
 
             }
     calculateForces();
     for (int i = 0; i < N; i ++) 
         for (int j = 0; j < 5; j++)
             for (int k = 0; k < 3; k++) {
-                v[i][j][k] += 0.5 * a[i][j][k] * dt;
+                v[i][j][k] += 0.5 * a[i][0][k] * dt;
             }
 }
 
