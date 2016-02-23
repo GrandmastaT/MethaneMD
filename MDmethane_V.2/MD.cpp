@@ -162,7 +162,7 @@ void initRotations() {  //initialize molecule rotation
                                   matrix_A_list[k][8]*(r_lab[k][j][2] - r_lab[k][0][2]); 
         }
 
-// rotate back to lab system
+// push back to lab system
         for (int k = 0; k < N; k++)
             for (int j = 0; j < 5; j++) 
                 for (int l = 0; l < 3; l++)
@@ -170,18 +170,29 @@ void initRotations() {  //initialize molecule rotation
 }
 
 void calculateForces() {
-    for (int i = 0; i < N-1; i++)                   // molecule i
+    for (int i = 0; i < N; i++)
+        for(int j = 0; j < 5; j++)
+            for (int k = 0; k < 3; k++)
+                a[i][j][k] = 0;
+    for (int i = 0; i < N-1; i++)                   // molecule i        
         for (int j = i+1; j < N; j++) {             // molecule j
-            double rij[5][3];
-            double rSqd = 0.;
-            for (int k = 0; k < 5; k++) {             // sites of i 
+            double rij[5][3];                       // rij[sites][coords]
+            for (int k = 0; k < 5; k++) {           // sites of i 
+                double rSqd = 0.;                   //set rSqd = 0 for site k
                 for (int l = 0; l < 5; l++)         // sites of j
                     for (int m = 0; m < 3; m++) {   // coords
 //                        std::cout << r_lab[i][k][m] << " r_lab_i" << std::endl;
 //                        std::cout << r_lab[j][k][m] << " r_lab_j" << std::endl;
 //                        std::cout << rij[k][m] << " rij" << std::endl;
-
                         rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];   //distance between sites
+                        if (abs(rij[0][m]) > 0.5 * lBox) {              // closest image convention
+                            if (rij[k][m] > 0)
+                                for (int var = 0; var < 5; var++)
+                                    rij[var][m] -= lBox;
+                            else
+                                for (int var = 0; var < 5; var++)
+                                    rij[var][m] += lBox;
+                        }
                         rSqd += rij[k][m] * rij[k][m];
                     }
                 for (int l = 0; l < 5; l++)         // sites of j
@@ -201,8 +212,6 @@ void calculateForces() {
                                 a[i][k][m]  += rij[k][m] * f_CH;
                                 a[j][k][m]  -= rij[k][m] * f_CH;
                         }
-//                            std::cout << a[i][k][m] << " ai" << std::endl;
-//                            std::cout << a[j][k][m] << " aj" << std::endl;
                     }
             }
         }   
@@ -214,18 +223,20 @@ void velocityVerlet() {
     for (int i = 0; i < N; i ++) 
         for (int j = 0; j < 5; j++)
             for (int k = 0; k < 3; k++) {
-//            std::cout << a[i][j] << std::endl;
-//                std::cout << a[i][j][k] << " a" << std::endl;
-                r_lab[i][j][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5;
+                r_lab[i][j][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
+                if (r_lab[i][0][k] < 0)     // boundary conditions
+                    for (int l = 0; l < 5; l++)
+                        r_lab[i][l][k] += lBox;
+                if (r_lab[i][0][k] >= lBox)
+                    for (int l = 0; l < 5; l++)
+                        r_lab[i][l][k] -= lBox;
                 v[i][j][k] += 0.5 * a[i][0][k] * dt;
-
-            }
+            }    
     calculateForces();
     for (int i = 0; i < N; i ++) 
-        for (int j = 0; j < 5; j++)
-            for (int k = 0; k < 3; k++) {
-                v[i][j][k] += 0.5 * a[i][0][k] * dt;
-            }
+//        for (int j = 0; j < 5; j++)
+            for (int k = 0; k < 3; k++)
+                v[i][0][k] += 0.5 * a[i][0][k] * dt;    // calculate new COM speed
 }
 
 
@@ -234,9 +245,9 @@ int main() {
 
     initRotations();
     
-    std::ofstream file("methane_20160222_50_256.xyz");
+    std::ofstream file("methane_20160222_1000_256.xyz");
     
-    int n_step = 50;
+    int n_step = 500;
     for (int step_number = 0; step_number < n_step; step_number++) {
         std::cout << step_number << std::endl;
         
