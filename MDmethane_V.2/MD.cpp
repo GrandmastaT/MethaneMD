@@ -3,16 +3,19 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <cstdio>
 #include <string>
 #include <stdio.h>
 #include <gsl/gsl_rng.h>
+
+
 
 // units: nm, ps, au
 // i,j,k,l,m,n not free
 const int N = 256 ;             // number of lattice points
 double rho = 0.395052;          // density u/(nm³) in gas ad T = 25°C
 double T = 25. + 273;           // system temperature in K
-double dt = 0.01;               // time step in ps
+double dt = 0.1;               // time step in ps
 double ***r_lab;                // lattice point
 double ***v;                    // velocities
 double ***a;                    // accelerations
@@ -30,8 +33,11 @@ double **matrix_A;
 
 double ***r_body;
 double sigma_HH = 0.25;     // nm
+double sigma_HH_6 = std::pow(sigma_HH, 6);
 double sigma_CC = 0.35;     // nm
+double sigma_CC_6 = std::pow(sigma_CC, 6);
 double sigma_CH = 0.3;      // nm
+double sigma_CH_6 = std::pow(sigma_CH, 6);
 double epsilon_HH = 15.1;   // K
 double epsilon_CC = 33.2;   // K
 double epsilon_CH = 22.3902;// K
@@ -71,8 +77,11 @@ void initPositions() { //initialize FFC lattice
                 v[i][j] = new double [3];
                 a[i][j] = new double [3];
             }
-
         }
+        for (int i = 0; i < N; i++)
+            for (int j = 0; j < 5; j++)
+                for (int k = 0; k < 3; k++)
+                    v[i][j][k] = 0;
 
         int index = 0;
         for (int i = 0; i < 2*axisN; i++) 
@@ -215,104 +224,67 @@ void calculateForces() {
 
     for (int i = 0; i < N; i++)
         for (int j = 0; j < 5; j++)
-            for (int k = 0; k < 3; k++)
-                a[i][j][k] = 0;     // acceleration for [molecule][site][axis]
-
+            for (int k = 0; k < 3; k++) 
+                a[i][j][k] = 0.;     // acceleration for [molecule][site][axis]
+            
     for (int i = 0; i < N-1; i++)
         for (int j = i+1; j < N; j++)
             for (int k = 0; k < 5; k++) {         // site of A
-                double rij[5][3];
                 for (int l = 0; l < 5; l++) {     // site of B, calculates forces between site k of molecule i and site l of molecule j
+                    double rij[3] = {0, 0, 0};
                     double rSqd = 0;    // needs to be reset for every site l !
                     for (int m = 0; m < 3; m++) {
-                        rij[l][m] = r_lab[i][k][m] - r_lab[j][l][m];
-                        if (std::abs(rij[l][m] > 0.5*lBox))
-                            if (rij[l][m] > 0)
-                                rij[l][m] -= lBox;
+                        rij[m] = r_lab[j][l][m] - r_lab[i][k][m];
+                        // closest image convetion           <---- problem weil nicht vom COM gemessen? sollte nur passieren wenn l = k = 0
+                        if (std::abs(r_lab[j][0][m] - r_lab[i][0][m]) > 0.5 * lBox) {  // <<---- closest image COM only
+         //               if (std::abs(rij[m] > 0.5*lBox)) {
+                            if (rij[m] > 0)
+                                rij[m] -= lBox;
                             else
-                                rij[l][m] += lBox;
-
-                        rSqd += rij[l][m] * rij[l][m];
+                                rij[m] += lBox;
+                        }
+                        rSqd += rij[m] * rij[m];
                     }   // end of m
+                        std::cout << rSqd << " rSqd" << std::endl;
                     for (int m = 0; m < 3; m++) {   
                         if ( k == 0 && l == 0) {                    // CC
-                            double f_CC = 24 * epsilon_CC * (2 * (std::pow(sigma_CC, 12) / std::pow(rSqd, -14)) - std::pow(sigma_CC, 6) / (std::pow(rSqd, -8)));
-                            a[i][k][m]  += rij[l][m] * f_CC;
-                            a[j][k][m]  -= rij[l][m] * f_CC;
+                            double f_CC = 24 * epsilon_CC * sigma_CC_6 * (2 * sigma_CC_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
+                            a[i][k][m]  += rij[m] * f_CC;
+                            a[j][k][m]  -= rij[m] * f_CC;
+                            std::cout << f_CC << " fcc" << std::endl;
                         }
                             else if ( k != 0 && l != 0 ) {          // HH
-                                double f_HH = 24 * epsilon_HH * (2 * (std::pow(sigma_HH, 12) / std::pow(rSqd, -14)) - std::pow(sigma_HH, 6) / (std::pow(rSqd, -8)));
-                                a[i][k][m]  += rij[l][m] * f_HH;
-                                a[j][k][m]  -= rij[l][m] * f_HH;
+                                double f_HH = 24 * epsilon_HH * sigma_HH_6 * (2 * sigma_HH_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
+                                a[i][k][m]  += rij[m] * f_HH;
+                                a[j][k][m]  -= rij[m] * f_HH;
+                                std::cout << f_HH << " fhh" << std::endl;
                             }
                             else {                                  // CH
-                                double f_CH = 24 * epsilon_CH * (2 * (std::pow(sigma_CH, 12) / std::pow(rSqd, -14)) - std::pow(sigma_CH, 6) / (std::pow(rSqd, -8)));
-                                a[i][k][m]  += rij[l][m] * f_CH;
-                                a[j][k][m]  -= rij[l][m] * f_CH;
+                                double f_CH = 24 * epsilon_CH * sigma_CH_6 *  (2 * sigma_CH_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
+                                a[i][k][m]  += rij[m] * f_CH;
+                                a[j][k][m]  -= rij[m] * f_CH;
+                                std::cout << f_CH << " fch" << std::endl;
                         }
                     }   // end of m
                 }   // end of l
             }   // end of k
 }
 
-/*
-void calculateForces() {            // calculate LJ forces between all sites
-    for (int i = 0; i < N; i++)
-        for(int j = 0; j < 5; j++)
-            for (int k = 0; k < 3; k++)
-                a[i][j][k] = 0;
-    for (int i = 0; i < N-1; i++)                   // molecule i        
-        for (int j = i+1; j < N; j++) {             // molecule j
-            double rij[5][3];                       // rij[sites][coords]
-            for (int k = 0; k < 5; k++)             // sites of i 
-                for (int l = 0; l < 5; l++) {       // sites of j
-                    double rSqd = 0.;               //set rSqd = 0 for site k on site l
-                    for (int m = 0; m < 3; m++) {   // coords
-                        rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];    //distance between sites
-                        if (abs(rij[0][m]) > 0.5 * lBox) {              // closest image convention
-                            if (rij[k][m] > 0)
-                                for (int var = 0; var < 5; var++)
-                                    rij[var][m] -= lBox;
-                            else
-                                for (int var = 0; var < 5; var++)
-                                    rij[var][m] += lBox;
-                        }
-                        rSqd += rij[k][m] * rij[k][m];
-                    }
-                    for (int m = 0; m < 3; m++) {   // coords
-                        if ( k == 0 && l == 0) {                    // CC
-                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -7)) - (lj_CC_6 * std::pow(rSqd, -4)));
-                            a[i][k][m]  += rij[k][m] * f_CC;
-                            a[j][k][m]  -= rij[k][m] * f_CC;
-                        }
-                            else if ( k != 0 && l != 0 ) {          // HH
-                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -7)) - (lj_HH_6 * std::pow(rSqd, -4)));
-                                a[i][k][m]  += rij[k][m] * f_HH;
-                                a[j][k][m]  -= rij[k][m] * f_HH;
-                            }
-                            else {                                  // CH
-                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -7)) - (lj_CH_6 * std::pow(rSqd, -4)));
-                                a[i][k][m]  += rij[k][m] * f_CH;
-                                a[j][k][m]  -= rij[k][m] * f_CH;
-                        }
-                    }
-            }
-        }   
-}
-*/
 
 void velocityVerletTranslation() {          // translation of COM only!
     calculateForces();
     for (int i = 0; i < N; i ++) 
-        for (int k = 0; k < 3; k++) {
+        for (int k = 0; k < 3; k++) { 
             r_lab[i][0][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
-            if (r_lab[i][0][k] < 0)     // boundary conditions <--- here lies the mistake most likely
+            // boundary conditions <--- here lies the mistake most likely <<< nope, seems legit. << not anymore.
+            if (r_lab[i][0][k] < 0)    
                     r_lab[i][0][k] += lBox;
             if (r_lab[i][0][k] >= lBox)
                     r_lab[i][0][k] -= lBox;
             v[i][0][k] += 0.5 * a[i][0][k] * dt;
         }    
     setSites();
+    rotate();
     calculateForces();
     for (int i = 0; i < N; i ++) 
         for (int k = 0; k < 3; k++)
@@ -342,9 +314,11 @@ int main() {
     initRotations();
     rotate();
 
-    std::ofstream file("methane_gas_20160225_200_256.xyz");
-    std::ofstream file_test("control_file.txt");
-    int n_step = 5;
+    std::ofstream file("methane_gas_20160225_300_256.xyz");
+//    std::ofstream file_test("control_file.txt");
+//    file_test << hh << " hh " << lBox << " lBox " << mBox << " mBox " << std::endl;
+
+    int n_step = 300;
     for (int step_number = 0; step_number < n_step; step_number++) {
         if (step_number%50 == 0)
             std::cout << step_number << std::endl;        
@@ -373,43 +347,50 @@ int main() {
                 file << std::endl;
             }
         }
-        for (int k = 0; k < N; k++){
-            file_test << step_number << std::endl;
+/*        for (int k = 0; k < N; k++){
+            file_test << step_number << " step number" << std::endl;
             for (int i = 0; i < 5; i++) {
                 for (int j = 0; j < 3; j++) {
-                    file_test << r_lab[k][i][j] << " r ";
-                    file_test << a[k][i][j] << " a ";
+                    file_test << r_lab[k][i][j] << " rad ";
+                    file_test << v[k][i][j] << " vel ";
+                    file_test << a[k][i][j] << " acc ";
+                    file_test << " | ";
                 }
                 file_test << i << " site " << std::endl;
             }
         }
-        velocityVerletTranslation();
+*/        velocityVerletTranslation();
 
-        for (int k = 0; k < N; k++) {
+/*        for (int k = 0; k < N; k++) {
             file_test << " after velocity verlet " << std::endl;
             for (int i = 0; i < 5; i++) {
                 for (int j = 0; j < 3; j++) {
-                    file_test << r_lab[k][i][j] << " r " ;
-                    file_test << a[k][i][j] << " a " ;
+                    file_test << r_lab[k][i][j] << " rad " ;
+                    file_test << v[k][i][j] << " vel ";
+                    file_test << a[k][i][j] << " acc " ;
+                    file_test << " | ";
                 }
                 file_test << i << " site " << std::endl;
             }
         }
-        rotate();
+*/       // rotate();
         
-        for (int k = 0; k < N; k++) {
+/*        for (int k = 0; k < N; k++) {
             file_test << " after rotate " << std::endl;
             for (int i = 0; i < 5; i++) {
                 for (int j = 0; j < 3; j++) {
-                    file_test << r_lab[k][i][j] << " r ";
-                    file_test << a[k][i][j] << " a ";
+                    file_test << r_lab[k][i][j] << " rad ";
+                    file_test << v[k][i][j] << " vel ";
+                    file_test << a[k][i][j] << " acc ";
+                    file_test << " | ";
                 }
                 file_test << i << " site " << std::endl;
             }
         }
     }
-    file.close();
-//    std::cout << "test " << 0%3 << std::endl;
+    file_test.close();
+*/   } 
+file.close();
     return 0;
 }
 
