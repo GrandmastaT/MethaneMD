@@ -7,19 +7,19 @@
 #include <stdio.h>
 #include <gsl/gsl_rng.h>
 
-
+// units: nm, ps, au
 // i,j,k,l,m,n not free
 const int N = 256 ;             // number of lattice points
-double rho = 0.656;             // density
-double T = 1.0;                 // system temperature
-double dt = 0.01;               // time step
+double rho = 0.395052;          // density u/(nm³) in gas ad T = 25°C
+double T = 25. + 273;           // system temperature in K
+double dt = 0.01;               // time step in ps
 double ***r_lab;                // lattice point
 double ***v;                    // velocities
 double ***a;                    // accelerations
 
-double d_CH = 2.*0.1087;        // distance from C to H (in pm)
+double d_CH = 0.1087;           // distance from C to H (in nm)
 double angle_HCH = 109.5;       // angle between HCH in grad
-double hh = sqrt(2.*(d_CH*d_CH) * (1.-cos(angle_HCH)));	//length between two H atoms
+double hh = d_CH * sqrt(2.* (1.-cos(angle_HCH)));	//length between two H atoms
 double mBox = hh/sqrt(2.);      // length of molecule cell
 double lBox = std::pow(N/rho, 1./3.);   // calculate box length
 double **q;                     //list of quaternion paramters q[0], q[1], q[2], q[3]
@@ -29,12 +29,21 @@ double **matrix_A_list;
 double **matrix_A;
 
 double ***r_body;
+double sigma_HH = 0.25;     // nm
+double sigma_CC = 0.35;     // nm
+double sigma_CH = 0.3;      // nm
+double epsilon_HH = 15.1;   // K
+double epsilon_CC = 33.2;   // K
+double epsilon_CH = 22.3902;// K
+/*
 double lj_CC_12 = 1.12190000;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
 double lj_HH_12 = 9.00030;
 double lj_CH_12 = 1.2554300;
 double lj_CC_6 = 6.10304;       // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
 double lj_HH_6 = 3.68652;
 double lj_CH_6 = 1.49997;
+*/
+
 
 void initPositions() { //initialize FFC lattice
     int axisN = 1;
@@ -207,14 +216,14 @@ void calculateForces() {
     for (int i = 0; i < N; i++)
         for (int j = 0; j < 5; j++)
             for (int k = 0; k < 3; k++)
-                a[i][j][k] = 0;
+                a[i][j][k] = 0;     // acceleration for [molecule][site][axis]
 
     for (int i = 0; i < N-1; i++)
         for (int j = i+1; j < N; j++)
             for (int k = 0; k < 5; k++) {         // site of A
                 double rij[5][3];
-                double rSqd = 0;
-                for (int l = 0; l < 5; l++) {     // site of B
+                for (int l = 0; l < 5; l++) {     // site of B, calculates forces between site k of molecule i and site l of molecule j
+                    double rSqd = 0;    // needs to be reset for every site l !
                     for (int m = 0; m < 3; m++) {
                         rij[l][m] = r_lab[i][k][m] - r_lab[j][l][m];
                         if (std::abs(rij[l][m] > 0.5*lBox))
@@ -227,17 +236,17 @@ void calculateForces() {
                     }   // end of m
                     for (int m = 0; m < 3; m++) {   
                         if ( k == 0 && l == 0) {                    // CC
-                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
+                            double f_CC = 24 * epsilon_CC * (2 * (std::pow(sigma_CC, 12) / std::pow(rSqd, -14)) - std::pow(sigma_CC, 6) / (std::pow(rSqd, -8)));
                             a[i][k][m]  += rij[l][m] * f_CC;
                             a[j][k][m]  -= rij[l][m] * f_CC;
                         }
                             else if ( k != 0 && l != 0 ) {          // HH
-                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -8)) - (lj_HH_6 * std::pow(rSqd, -4)));
+                                double f_HH = 24 * epsilon_HH * (2 * (std::pow(sigma_HH, 12) / std::pow(rSqd, -14)) - std::pow(sigma_HH, 6) / (std::pow(rSqd, -8)));
                                 a[i][k][m]  += rij[l][m] * f_HH;
                                 a[j][k][m]  -= rij[l][m] * f_HH;
                             }
                             else {                                  // CH
-                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -8)) - (lj_CH_6 * std::pow(rSqd, -4)));
+                                double f_CH = 24 * epsilon_CH * (2 * (std::pow(sigma_CH, 12) / std::pow(rSqd, -14)) - std::pow(sigma_CH, 6) / (std::pow(rSqd, -8)));
                                 a[i][k][m]  += rij[l][m] * f_CH;
                                 a[j][k][m]  -= rij[l][m] * f_CH;
                         }
@@ -272,17 +281,17 @@ void calculateForces() {            // calculate LJ forces between all sites
                     }
                     for (int m = 0; m < 3; m++) {   // coords
                         if ( k == 0 && l == 0) {                    // CC
-                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
+                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -7)) - (lj_CC_6 * std::pow(rSqd, -4)));
                             a[i][k][m]  += rij[k][m] * f_CC;
                             a[j][k][m]  -= rij[k][m] * f_CC;
                         }
                             else if ( k != 0 && l != 0 ) {          // HH
-                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -8)) - (lj_HH_6 * std::pow(rSqd, -4)));
+                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -7)) - (lj_HH_6 * std::pow(rSqd, -4)));
                                 a[i][k][m]  += rij[k][m] * f_HH;
                                 a[j][k][m]  -= rij[k][m] * f_HH;
                             }
                             else {                                  // CH
-                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -8)) - (lj_CH_6 * std::pow(rSqd, -4)));
+                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -7)) - (lj_CH_6 * std::pow(rSqd, -4)));
                                 a[i][k][m]  += rij[k][m] * f_CH;
                                 a[j][k][m]  -= rij[k][m] * f_CH;
                         }
@@ -295,23 +304,19 @@ void calculateForces() {            // calculate LJ forces between all sites
 void velocityVerletTranslation() {          // translation of COM only!
     calculateForces();
     for (int i = 0; i < N; i ++) 
-//        for (int j = 0; j < 5; j++)         // not necessary! only com moves!
-            for (int k = 0; k < 3; k++) {
-                r_lab[i][0][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
-                if (r_lab[i][0][k] < 0)     // boundary conditions <--- here lies the mistake most likely
-//                    for (int l = 0; l < 5; l++)
-                        r_lab[i][0][k] += lBox;
-                if (r_lab[i][0][k] >= lBox)
-//                    for (int l = 0; l < 5; l++)
-                        r_lab[i][0][k] -= lBox;
-                v[i][0][k] += 0.5 * a[i][0][k] * dt;
-            }    
+        for (int k = 0; k < 3; k++) {
+            r_lab[i][0][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
+            if (r_lab[i][0][k] < 0)     // boundary conditions <--- here lies the mistake most likely
+                    r_lab[i][0][k] += lBox;
+            if (r_lab[i][0][k] >= lBox)
+                    r_lab[i][0][k] -= lBox;
+            v[i][0][k] += 0.5 * a[i][0][k] * dt;
+        }    
     setSites();
     calculateForces();
     for (int i = 0; i < N; i ++) 
-//        for (int j = 0; j < 5; j++)
-            for (int k = 0; k < 3; k++)
-                v[i][0][k] += 0.5 * a[i][0][k] * dt;    // calculate new COM speed
+        for (int k = 0; k < 3; k++)
+            v[i][0][k] += 0.5 * a[i][0][k] * dt;    // calculate new COM speed
 }
 
 void velocityVerletRotation() {             // rotation of molecule
@@ -319,6 +324,7 @@ void velocityVerletRotation() {             // rotation of molecule
 
 
 /*
+ * FUNCTION LIST
  *  velocityVerletTranslation   --- calculates velocity verlet for translation moves for com
  *  initPositions   --- sets positions of molecules in FCC lattice  
  *  calculateForces --- calculates the forces between sites
@@ -336,9 +342,9 @@ int main() {
     initRotations();
     rotate();
 
-    std::ofstream file("methane_20160225_300_256.xyz");
-    
-    int n_step = 300;
+    std::ofstream file("methane_gas_20160225_200_256.xyz");
+    std::ofstream file_test("control_file.txt");
+    int n_step = 5;
     for (int step_number = 0; step_number < n_step; step_number++) {
         if (step_number%50 == 0)
             std::cout << step_number << std::endl;        
@@ -367,8 +373,40 @@ int main() {
                 file << std::endl;
             }
         }
+        for (int k = 0; k < N; k++){
+            file_test << step_number << std::endl;
+            for (int i = 0; i < 5; i++) {
+                for (int j = 0; j < 3; j++) {
+                    file_test << r_lab[k][i][j] << " r ";
+                    file_test << a[k][i][j] << " a ";
+                }
+                file_test << i << " site " << std::endl;
+            }
+        }
         velocityVerletTranslation();
+
+        for (int k = 0; k < N; k++) {
+            file_test << " after velocity verlet " << std::endl;
+            for (int i = 0; i < 5; i++) {
+                for (int j = 0; j < 3; j++) {
+                    file_test << r_lab[k][i][j] << " r " ;
+                    file_test << a[k][i][j] << " a " ;
+                }
+                file_test << i << " site " << std::endl;
+            }
+        }
         rotate();
+        
+        for (int k = 0; k < N; k++) {
+            file_test << " after rotate " << std::endl;
+            for (int i = 0; i < 5; i++) {
+                for (int j = 0; j < 3; j++) {
+                    file_test << r_lab[k][i][j] << " r ";
+                    file_test << a[k][i][j] << " a ";
+                }
+                file_test << i << " site " << std::endl;
+            }
+        }
     }
     file.close();
 //    std::cout << "test " << 0%3 << std::endl;

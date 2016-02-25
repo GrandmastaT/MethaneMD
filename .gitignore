@@ -27,3 +27,6 @@
 *.out
 *.app
 *.xyz
+
+# Test files
+control_file.txt
