@@ -10,12 +10,12 @@
 
 // i,j,k,l,m,n not free
 const int N = 256 ;             // number of lattice points
-double rho = 0.456;             // density
+double rho = 0.656;             // density
 double T = 1.0;                 // system temperature
 double dt = 0.01;               // time step
-double ***r_lab;                     // lattice point
-double ***v;                     // velocities
-double ***a;                     // accelerations
+double ***r_lab;                // lattice point
+double ***v;                    // velocities
+double ***a;                    // accelerations
 
 double d_CH = 2.*0.1087;        // distance from C to H (in pm)
 double angle_HCH = 109.5;       // angle between HCH in grad
@@ -25,11 +25,14 @@ double lBox = std::pow(N/rho, 1./3.);   // calculate box length
 double **q;                     //list of quaternion paramters q[0], q[1], q[2], q[3]
 double q_norm;                  // normalization factor of quaternion
 
+double **matrix_A_list;
+double **matrix_A;
+
 double ***r_body;
 double lj_CC_12 = 1.12190000;   // epsilon*sigma^12  (in K*Angstrom)   with KONG combination rules
 double lj_HH_12 = 9.00030;
 double lj_CH_12 = 1.2554300;
-double lj_CC_6 = 6.10304;      // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
+double lj_CC_6 = 6.10304;       // epsilon*sigma^6   (in K*Angstrom)   with KONG combination rules
 double lj_HH_6 = 3.68652;
 double lj_CH_6 = 1.49997;
 
@@ -43,8 +46,8 @@ void initPositions() { //initialize FFC lattice
         double stepL = lBox/axisN;              // step length, length between lattice points
         double hstepL = stepL/2.;
 
-        r_lab = new double **[N];    // create lattice points
-        r_body = new double **[N]; // create rotation points
+        r_lab = new double **[N];   // create lattice points
+        r_body = new double **[N];  // create rotation points
         v = new double **[N];
         a = new double **[N];
 
@@ -94,8 +97,29 @@ void initPositions() { //initialize FFC lattice
         std::cout << "oida, keine magic number" << std::endl;
 }
 
+void setSites() {               // sets sites to a com r_lab coordinate. need to rotate then.
+    for (int i = 0; i < N; i++) {
+                        r_lab[i][1][0] = r_lab[i][0][0] - mBox*0.5;      // set H1
+                        r_lab[i][1][1] = r_lab[i][0][1] - mBox*0.5;
+                        r_lab[i][1][2] = r_lab[i][0][2] - mBox*0.5;
 
-void initRotations() {  //initialize molecule rotation
+                        r_lab[i][2][0] = r_lab[i][0][0] + mBox*0.5;      // set H2
+                        r_lab[i][2][1] = r_lab[i][0][1] - mBox*0.5;
+                        r_lab[i][2][2] = r_lab[i][0][2] + mBox*0.5;
+
+                        r_lab[i][3][0] = r_lab[i][0][0] - mBox*0.5;      // set H3
+                        r_lab[i][3][1] = r_lab[i][0][1] + mBox*0.5;
+                        r_lab[i][3][2] = r_lab[i][0][2] + mBox*0.5;
+
+                        r_lab[i][4][0] = r_lab[i][0][0] + mBox*0.5;      // set H4
+                        r_lab[i][4][1] = r_lab[i][0][1] + mBox*0.5;
+                        r_lab[i][4][2] = r_lab[i][0][2] - mBox*0.5;
+                    }    
+}
+
+
+
+void initRotations() {  //initialize first molecule rotation at random, defines matrix_A_list
     const gsl_rng_type * Seed1;
     gsl_rng * Seed2;
     gsl_rng_env_setup();
@@ -103,10 +127,15 @@ void initRotations() {  //initialize molecule rotation
     Seed1 = gsl_rng_default;
     Seed2 = gsl_rng_alloc (Seed1);
     
-    q = new double *[N];
+    q = new double *[N];                    // first random quaternion
 
-    double matrix_A[3][3];
-    double matrix_A_list[N][9];
+    matrix_A = new double *[3];             // matrices for rotations
+    for (int k = 0; k < 3; k++)
+        matrix_A[k] = new double[3];
+
+    matrix_A_list = new double *[N];        // list of rotation matrices, [molecule][A_ij]
+    for (int k = 0; k < N ;k++)
+        matrix_A_list[k] = new double [9];
 
     for (int k = 0; k < N; k++) {           // for every molecule   
         q_norm = 0;
@@ -146,7 +175,11 @@ void initRotations() {  //initialize molecule rotation
             matrix_A_list[k][7] = matrix_A[2][1];
             matrix_A_list[k][8] = matrix_A[2][2];
     }
-        for (int k = 0; k < N; k++) 
+
+}
+
+void rotate() {                             // actual rotation around of r_lab in centre and rotation around the matrix of the molecule, then push back
+        for (int k = 0; k < N; k++)         // need to reset sites around COM before rotation!!! #neverForget 
             for (int j = 0; j < 5; j++) {
 // rotate C,H1,H2,H3,H4        r_body[molecule][site][coord]    r_lab[molecule][com][coord]
                 r_body[k][j][0] = matrix_A_list[k][0]*(r_lab[k][j][0] - r_lab[k][0][0]) + 
@@ -161,7 +194,6 @@ void initRotations() {  //initialize molecule rotation
                                   matrix_A_list[k][7]*(r_lab[k][j][1] - r_lab[k][0][1]) + 
                                   matrix_A_list[k][8]*(r_lab[k][j][2] - r_lab[k][0][2]); 
         }
-
 // push back to lab system
         for (int k = 0; k < N; k++)
             for (int j = 0; j < 5; j++) 
@@ -169,7 +201,53 @@ void initRotations() {  //initialize molecule rotation
                     r_lab[k][j][l] = r_body[k][j][l] + r_lab[k][0][l] ;
 }
 
+
 void calculateForces() {
+
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < 5; j++)
+            for (int k = 0; k < 3; k++)
+                a[i][j][k] = 0;
+
+    for (int i = 0; i < N-1; i++)
+        for (int j = i+1; j < N; j++)
+            for (int k = 0; k < 5; k++) {         // site of A
+                double rij[5][3];
+                double rSqd = 0;
+                for (int l = 0; l < 5; l++) {     // site of B
+                    for (int m = 0; m < 3; m++) {
+                        rij[l][m] = r_lab[i][k][m] - r_lab[j][l][m];
+                        if (std::abs(rij[l][m] > 0.5*lBox))
+                            if (rij[l][m] > 0)
+                                rij[l][m] -= lBox;
+                            else
+                                rij[l][m] += lBox;
+
+                        rSqd += rij[l][m] * rij[l][m];
+                    }   // end of m
+                    for (int m = 0; m < 3; m++) {   
+                        if ( k == 0 && l == 0) {                    // CC
+                            double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
+                            a[i][k][m]  += rij[l][m] * f_CC;
+                            a[j][k][m]  -= rij[l][m] * f_CC;
+                        }
+                            else if ( k != 0 && l != 0 ) {          // HH
+                                double f_HH = 24 * ((lj_HH_12 * std::pow(rSqd, -8)) - (lj_HH_6 * std::pow(rSqd, -4)));
+                                a[i][k][m]  += rij[l][m] * f_HH;
+                                a[j][k][m]  -= rij[l][m] * f_HH;
+                            }
+                            else {                                  // CH
+                                double f_CH = 24 * ((lj_CH_12 * std::pow(rSqd, -8)) - (lj_CH_6 * std::pow(rSqd, -4)));
+                                a[i][k][m]  += rij[l][m] * f_CH;
+                                a[j][k][m]  -= rij[l][m] * f_CH;
+                        }
+                    }   // end of m
+                }   // end of l
+            }   // end of k
+}
+
+/*
+void calculateForces() {            // calculate LJ forces between all sites
     for (int i = 0; i < N; i++)
         for(int j = 0; j < 5; j++)
             for (int k = 0; k < 3; k++)
@@ -177,14 +255,11 @@ void calculateForces() {
     for (int i = 0; i < N-1; i++)                   // molecule i        
         for (int j = i+1; j < N; j++) {             // molecule j
             double rij[5][3];                       // rij[sites][coords]
-            for (int k = 0; k < 5; k++) {           // sites of i 
-                double rSqd = 0.;                   //set rSqd = 0 for site k
-                for (int l = 0; l < 5; l++)         // sites of j
+            for (int k = 0; k < 5; k++)             // sites of i 
+                for (int l = 0; l < 5; l++) {       // sites of j
+                    double rSqd = 0.;               //set rSqd = 0 for site k on site l
                     for (int m = 0; m < 3; m++) {   // coords
-//                        std::cout << r_lab[i][k][m] << " r_lab_i" << std::endl;
-//                        std::cout << r_lab[j][k][m] << " r_lab_j" << std::endl;
-//                        std::cout << rij[k][m] << " rij" << std::endl;
-                        rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];   //distance between sites
+                        rij[k][m] = r_lab[i][k][m] - r_lab[j][l][m];    //distance between sites
                         if (abs(rij[0][m]) > 0.5 * lBox) {              // closest image convention
                             if (rij[k][m] > 0)
                                 for (int var = 0; var < 5; var++)
@@ -195,7 +270,6 @@ void calculateForces() {
                         }
                         rSqd += rij[k][m] * rij[k][m];
                     }
-                for (int l = 0; l < 5; l++)         // sites of j
                     for (int m = 0; m < 3; m++) {   // coords
                         if ( k == 0 && l == 0) {                    // CC
                             double f_CC = 24 * ((lj_CC_12 * std::pow(rSqd, -8)) - (lj_CC_6 * std::pow(rSqd, -4)));
@@ -216,22 +290,23 @@ void calculateForces() {
             }
         }   
 }
+*/
 
-
-void velocityVerlet() {
+void velocityVerletTranslation() {          // translation of COM only!
     calculateForces();
     for (int i = 0; i < N; i ++) 
-        for (int j = 0; j < 5; j++)
+//        for (int j = 0; j < 5; j++)         // not necessary! only com moves!
             for (int k = 0; k < 3; k++) {
-                r_lab[i][j][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
-                if (r_lab[i][0][k] < 0)     // boundary conditions
-                    for (int l = 0; l < 5; l++)
-                        r_lab[i][l][k] += lBox;
+                r_lab[i][0][k] += v[i][0][k] * dt + a[i][0][k] * dt * dt * 0.5; // calculate new coords from COM velocity and acceleration
+                if (r_lab[i][0][k] < 0)     // boundary conditions <--- here lies the mistake most likely
+//                    for (int l = 0; l < 5; l++)
+                        r_lab[i][0][k] += lBox;
                 if (r_lab[i][0][k] >= lBox)
-                    for (int l = 0; l < 5; l++)
-                        r_lab[i][l][k] -= lBox;
-                v[i][j][k] += 0.5 * a[i][0][k] * dt;
+//                    for (int l = 0; l < 5; l++)
+                        r_lab[i][0][k] -= lBox;
+                v[i][0][k] += 0.5 * a[i][0][k] * dt;
             }    
+    setSites();
     calculateForces();
     for (int i = 0; i < N; i ++) 
 //        for (int j = 0; j < 5; j++)
@@ -239,18 +314,34 @@ void velocityVerlet() {
                 v[i][0][k] += 0.5 * a[i][0][k] * dt;    // calculate new COM speed
 }
 
+void velocityVerletRotation() {             // rotation of molecule
+}
+
+
+/*
+ *  velocityVerletTranslation   --- calculates velocity verlet for translation moves for com
+ *  initPositions   --- sets positions of molecules in FCC lattice  
+ *  calculateForces --- calculates the forces between sites
+ *  rotate  --- rotates around a matrix matrix_A to a given quaternion q
+ *  initRotations   --- creates a random quaternion and its rotation matrix for all molecules
+ *  setSites    --- sets sites at new com location
+ */
+
+
+
 
 int main() {
     initPositions();
 
     initRotations();
+    rotate();
+
+    std::ofstream file("methane_20160225_300_256.xyz");
     
-    std::ofstream file("methane_20160222_1000_256.xyz");
-    
-    int n_step = 500;
+    int n_step = 300;
     for (int step_number = 0; step_number < n_step; step_number++) {
-        std::cout << step_number << std::endl;
-        
+        if (step_number%50 == 0)
+            std::cout << step_number << std::endl;        
 /*
         for  (int k = 0; k < N; k++){ 
             double norm_test = 0;
@@ -276,7 +367,8 @@ int main() {
                 file << std::endl;
             }
         }
-        velocityVerlet();
+        velocityVerletTranslation();
+        rotate();
     }
     file.close();
 //    std::cout << "test " << 0%3 << std::endl;
