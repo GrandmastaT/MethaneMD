@@ -7,14 +7,14 @@
 #include <string>
 #include <stdio.h>
 #include <gsl/gsl_rng.h>
-
-
+//#include <ctime>
+//#include <string>
 
 // units: nm, ps, au
 // i,j,k,l,m,n not free
 const int N = 256 ;             // number of lattice points
-double rho = 0.6;
-//double rho = 0.395052;          // density u/(nm³) in gas at T = 25°C
+//double rho = 0.6;
+double rho = 0.395052;          // density u/(nm³) in gas at T = 25°C
 double T = 25. + 273;           // system temperature in K
 double dt = 0.1;               // time step in ps
 double ***r_lab;                // lattice point
@@ -47,7 +47,7 @@ double Ixx = 8*mH; // moment of inertia
 double Iyy = 8*mH;
 double Izz = 8*mH;
 
-//const double kb = 1.38064852*std::pow(10, -23);       // boltzmann constant in J/K
+double kb = 1.38064852*std::pow(10, -23);       // boltzmann constant in J/K
 
 double ***r_body;
 double sigma_HH = 0.25;     // nm
@@ -296,21 +296,21 @@ void calculateForces() {
                     for (int m = 0; m < 3; m++) {                           // MASSEN VERGESSEN BEI DEN KRÄFTEN 
                         if ( k == 0 && l == 0) {                    // CC
                             double f_CC = 24 * epsilon_CC * sigma_CC_6 * (2 * sigma_CC_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
-                            a[i][k][m]  += rij[m] * f_CC / mC;
-                            a[j][l][m]  -= rij[m] * f_CC / mC;
-            //                std::cout << f_CC << " fcc" << std::endl;
+                            a[i][k][m]  += rij[m] * f_CC / (2*mC);
+                            a[j][l][m]  -= rij[m] * f_CC / (2*mC);
+//                            std::cout << f_CC << " fcc" << std::endl;
                         }
                             else if ( k != 0 && l != 0 ) {          // HH
                                 double f_HH = 24 * epsilon_HH * sigma_HH_6 * (2 * sigma_HH_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
-                                a[i][k][m]  += rij[m] * f_HH / mH;
-                                a[j][l][m]  -= rij[m] * f_HH / mH;
-              //                  std::cout << f_HH << " fhh" << std::endl;
+                                a[i][k][m]  += rij[m] * f_HH / 2*(mH);
+                                a[j][l][m]  -= rij[m] * f_HH / 2*(mH);
+//                                std::cout << f_HH << " fhh" << std::endl;
                             }
                             else {                                  // CH
                                 double f_CH = 24 * epsilon_CH * sigma_CH_6 *  (2 * sigma_CH_6 * std::pow(rSqd, -7)) - (std::pow(rSqd, -4));
-                                a[i][k][m]  += rij[m] * f_CH / mass[k];
-                                a[j][l][m]  -= rij[m] * f_CH / mass[l];
-                //                std::cout << f_CH << " fch" << std::endl;
+                                a[i][k][m]  += rij[m] * f_CH / (mass[k]+mass[l]);
+                                a[j][l][m]  -= rij[m] * f_CH / (mass[l]+mass[k]);
+//                                std::cout << f_CH << " fch" << std::endl;
                         }
                     }   // end of m
                 }   // end of l
@@ -451,6 +451,15 @@ void velocityVerletTranslation() {          // translation of COM only!
                 v[i][0][k] += 0.5 * a[i][j][k] * dt;    // calculate new COM speed, depends on ALL forces! not only a[][][] from com
 }
 
+double instantTemp() {
+    double temp_sum = 0;
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < 3; j++)
+            temp_sum += v[i][0][j]*v[i][0][j];
+    return temp_sum/3*kb*(N-1);
+}
+
+
 
 
 /*
@@ -468,8 +477,9 @@ int main() {
     initRotations();
     rotate();
 
-    std::ofstream file("methane_gas_20160229_100_256_density_rot.xyz");
-
+    std::ofstream file_test("testing.txt");
+    std::ofstream file("MD_methane_mess_up.xyz");
+    std::ofstream file_temp("temperature.txt");
     int n_step = 100;
     for (int step_number = 0; step_number < n_step; step_number++) {
         if (step_number%50 == 0)
@@ -477,8 +487,16 @@ int main() {
         file << 5*N << std::endl;
         file << "methane" << std::endl;    
 
+        file_temp << instantTemp() << "\n";
         for (int k = 0; k < N; k++) {
             for (int i = 0; i < 5; i++){
+                file_test << "box " << lBox << "\n";
+
+                file_test << "acc " << a[k][i][0]<< " " << a[k][i][1] << " " << a[k][i][2] << std::endl;
+                file_test << "vel " << v[k][i][0]<< " " << v[k][i][1] << " " << v[k][i][2] << std::endl;
+                file_test << "pos " << r_lab[k][i][0]<< " " << r_lab[k][i][1] << " " << r_lab[k][i][2] << std::endl;
+
+
                 if (i == 0)
                     file << "C ";
                 else
@@ -489,10 +507,13 @@ int main() {
             }
         }
         velocityVerletTranslation();
+
 //        velocityVerletRotation();
 //        rotate();
         } 
-file.close();
+    file_test.close();
+    file.close();
+    file_temp.close();
     return 0;
 }
 
